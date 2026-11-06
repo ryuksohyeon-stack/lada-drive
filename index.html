@@ -68,11 +68,38 @@ html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font-family:Pr
 .ar-g{clip-path:polygon(25% 100%,25% 5%,85% 22%,35% 42%,35% 100%)}
 .hid{display:none!important}
 </style>
+<script>
+/* start-up watchdog (plain script, runs even if the 3D module never loads): shows progress, and the real reason when start-up fails */
+(function () {
+  var t0 = Date.now(), failed = false, L = function () { return document.getElementById('load'); };
+  var pend = null; function say(t) { var l = L(); if (l) { l.classList.remove('off'); l.textContent = t; } else pend = t; }
+  document.addEventListener('DOMContentLoaded', function () { if (pend) say(pend); });
+  function fail(m) { if (failed || window.__booted) return; failed = true; say('시동 실패 · ' + m); }
+  window.__bootStep = function (s) { if (!failed) say('라다 시동 거는 중… · ' + s); };
+  window.__bootFail = fail;
+  try { var c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) fail('이 브라우저(또는 위젯 칸)에서 3D(WebGL)를 쓸 수 없습니다'); } catch (e) { fail('3D(WebGL) 확인 중 오류: ' + e.message); }
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t !== window) { if (t.tagName === 'SCRIPT') fail('3D 엔진 파일을 받지 못했습니다 (cdn.jsdelivr.net)'); return; } // a missing stylesheet/font/image is harmless
+    if (window.__booted) return;
+    if (!window.__modStarted && !e.message) { fail('3D 엔진(three.js)을 받지 못했습니다 — cdn.jsdelivr.net 이 막혔거나 연결이 끊겼습니다'); return; }
+    fail((e.message || '알 수 없는 오류') + (e.lineno ? ' (줄 ' + e.lineno + ')' : ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) { if (!window.__booted) fail((e.reason && e.reason.message) || String(e.reason)); });
+  var iv = setInterval(function () {
+    if (window.__booted || failed) { clearInterval(iv); return; }
+    var s = Math.round((Date.now() - t0) / 1000);
+    if (!window.__modStarted && s >= 20) fail('3D 엔진(three.js)을 불러오지 못했습니다 — 네트워크에서 cdn.jsdelivr.net 이 막혔거나 느립니다');
+    else if (s >= 90) fail('너무 오래 걸립니다 (' + s + '초) — 기기 메모리가 부족할 수 있습니다');
+  }, 1000);
+})();
+</script>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 </head>
 <body>
 <canvas id="gl"></canvas><div id="navhost" aria-hidden="true"></div>
 <div id="load">라다 시동 거는 중…</div>
+<noscript><style>#load{display:none}</style><div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;background:#05070a;color:#cfd6dd;font:600 14px sans-serif">이 화면은 스크립트가 필요한데, 지금 위치(위젯 칸)에서 스크립트가 막혀 있습니다.</div></noscript>
 <nav id="city"></nav>
 <div id="navsrc" style="display:none">
  <div id="nav">
@@ -99,6 +126,7 @@ import {mergeGeometries, mergeVertices} from 'three/addons/utils/BufferGeometryU
 import {MarchingCubes} from 'three/addons/objects/MarchingCubes.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+window.__modStarted = true;
 
 /* ============================================================ setup */
 const Q = new URLSearchParams(location.search);
@@ -2920,17 +2948,21 @@ function loop() {
 
 /* ============================================================ boot */
 (async () => {
-  try { await Promise.race([document.fonts.load('900 64px Pretendard'), new Promise(r => setTimeout(r, 2500))]); } catch (e) {}
-  buildSky(); buildWorld(); buildCabin(); tapeUI();
+  const frame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))), T = {}; let tp = performance.now();
+  const step = async (msg, fn) => { if (window.__bootStep) window.__bootStep(msg); await frame(); fn(); const n = performance.now(); T[msg] = Math.round(n - tp); tp = n; };
+  if (window.__bootStep) window.__bootStep('글꼴'); try { await Promise.race([document.fonts.load('900 64px Pretendard'), new Promise(r => setTimeout(r, 2500))]); } catch (e) {}
+  await step('하늘', buildSky); await step('도시 짓는 중', buildWorld); await step('차 실내 만드는 중', buildCabin); tapeUI();
   if (NIGHT) for (let i = 0; i < 6; i++) { const pl = new THREE.PointLight('#ffad5a', 70, 28, 2); scene.add(pl); plights.push(pl); }
   // footprints for map
   scene.traverse(o => {});
   for (const d of DEST) { const [x, z, lx, lz] = d.b; BLD.push([x - lx / 2, z - lz / 2, x + lx / 2, z + lz / 2]); }
   listItems(''); setView('browse'); resize();
-  document.getElementById('load').classList.add('off');
+  await step('그래픽 준비 중', () => renderer.compile(scene, camera)); window.__bootT = T;
+  window.__booted = true; document.getElementById('load').classList.add('off');
   if (Q.has('auto')) { const k = +Q.get('auto') - 1; preview(k); R0 = route(state, state.h, k); prog = 0; setView('guide'); }
   loop(); window.__dbg.ready = true;
-})().catch(e => { console.error('boot', e.message, e.stack); document.getElementById('load').textContent = '오류: ' + e.message; });
+})().catch(e => { console.error('boot', e.message, e.stack); if (window.__bootFail) window.__bootFail(e.message); else document.getElementById('load').textContent = '오류: ' + e.message; });
+canvas.addEventListener('webglcontextlost', () => { window.__booted = false; if (window.__bootFail) window.__bootFail('그래픽 메모리가 부족해 3D가 꺼졌습니다'); });
 window.__dbg = {get speed() { return speed; }, LANES, THREE, TAPE, car, occFree, route, DEST, ROAD, START, navScreenPos: (id) => { const e = typeof id === 'string' ? navEl.querySelector(id) : id; if (!e || !e.offsetParent) return null; let x = 0, y = 0, q = e; while (q && q !== navEl) { x += q.offsetLeft; y += q.offsetTop; q = q.offsetParent; } for (let p = e.parentElement; p && p !== navEl; p = p.parentElement) { x -= p.scrollLeft; y -= p.scrollTop; } const u = (x + e.offsetWidth / 2) / 1000, v = 1 - (y + e.offsetHeight / 2) / 620; const ns = car.userData.navScreen; ns.updateWorldMatrix(true, false); const w = new THREE.Vector3((u - .5) * .33, (v - .5) * .2046, 0).applyMatrix4(ns.matrixWorld).project(camera); const r = canvas.getBoundingClientRect(); return [r.left + (w.x + 1) / 2 * r.width, r.top + (1 - w.y) / 2 * r.height]; }, navProbe: (cx, cy) => { const r = canvas.getBoundingClientRect(); ray3.setFromCamera(new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera); const hn = ray3.intersectObject(car.userData.navScreen, false); if (!hn.length) return 'miss'; const px = hn[0].uv.x * 1000, py = (1 - hn[0].uv.y) * 620, el = navHit(px, py); return [Math.round(px), Math.round(py), el ? (el.id || el.className) : null]; }, scene, renderer, bloom, composer, camera, state, get nav() { return navState; }, preview, start: () => document.getElementById('pv-go').click(), set prog(v) { prog = v; }, get prog() { return prog; }, get R() { return R0; }, look: (y, p) => { tyaw = y; tpitch = p; }, set fov(v) { tfov = v; }, lookNow: (y, p) => { tyaw = yaw = y; tpitch = pitch = p; } };
 
 </script>
