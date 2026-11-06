@@ -359,7 +359,7 @@ function facadeBox(key, roofKey, x, z, lx, lz, h, type, y0 = 0) {
   if (type !== 'garage') boxInto(batch('plinth'), x, y0 + .45, z, lx + .35, .9, lz + .35);
   if (type === 'stalin' || type === 'school' || type === 'tower') { boxInto(batch('cornice'), x, y1 - .3, z, lx + .9, .6, lz + .9); boxInto(batch('cornice'), x, y0 + FL[type] + .15, z, lx + .3, .3, lz + .3); }
   else if (type !== 'pav' && type !== 'garage') boxInto(batch('cornice'), x, y1 - .12, z, lx + .25, .24, lz + .25);
-  ROOFS.push([x, z, lx, lz, y1, type]); if (y0 === 0) occAdd(x - lx / 2, z - lz / 2, x + lx / 2, z + lz / 2, 'B');
+  ROOFS.push([x, z, lx, lz, y1, type, key, y0]); if (y0 === 0) occAdd(x - lx / 2, z - lz / 2, x + lx / 2, z + lz / 2, 'B');
   const rb = batch(roofKey);
   rb.quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0], [0, 0, lx / 6, 0, lx / 6, lz / 6, 0, lz / 6]);
   // parapet lip
@@ -1003,7 +1003,7 @@ function buildWorld() {
   }
   // ---- trees: real branching birches (Moscow) and drooping, snow-capped spruces (both cities)
   const birches = [], firs = [];
-  for (const t3 of trees) ((NIGHT ? R() < .12 : R() < .3) ? firs : birches).push(t3); // Norilsk: mostly stunted bare larches
+  for (const t3 of trees) { const f = NIGHT ? R() < .12 : R() < .3; t3.fir = f; (f ? firs : birches).push(t3); } // Norilsk: mostly stunted bare larches
   const col = new THREE.Color(), UPV = new THREE.Vector3(0, 1, 0);
   const vcol = (g, f) => { const p = g.attributes.position, n = g.attributes.normal, a = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) { const c = f(n.getY(i), p.getY(i)); a[i * 3] = c[0]; a[i * 3 + 1] = c[1]; a[i * 3 + 2] = c[2]; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
   if (birches.length) {
@@ -1102,7 +1102,7 @@ function buildWorld() {
   }
   scene.userData.parked = parkedCars;
   const PK = {}; // kind -> instance list
-  parkedCars.forEach(p => { const k = pick(['sedan', 'sedan', 'hatch', 'hatch', 'suv', 'van']); (PK[k] = PK[k] || []).push(p); });
+  parkedCars.forEach(p => { const k = pick(['sedan', 'sedan', 'hatch', 'hatch', 'suv', 'van']); p.kind = k; (PK[k] = PK[k] || []).push(p); });
   const glassCarM = new THREE.MeshPhysicalMaterial({color: '#0b1016', roughness: .06, metalness: .4, clearcoat: 1, envMapIntensity: 1.3});
   const darkCarM = new THREE.MeshStandardMaterial({color: '#141516', roughness: .75});
   const rimM = new THREE.MeshStandardMaterial({color: '#b8bcc2', metalness: .9, roughness: .3});
@@ -1118,7 +1118,7 @@ function buildWorld() {
     const parts = [[G.paint, new THREE.MeshPhysicalMaterial({color: '#fff', metalness: .45, roughness: .38, clearcoat: 1, clearcoatRoughness: .12})], [G.glass, glassCarM], [G.dark, darkCarM], [G.rim, rimM], [G.plate, plateM], [G.head, headOffM], [G.tail, tailOffM]];
     if (NIGHT) parts.push([G.snow, snowCapM]);
     const meshes = parts.map(([g, m]) => { const im = new THREE.InstancedMesh(g, m, n); im.castShadow = !NIGHT; im.receiveShadow = !NIGHT; scene.add(im); return im; });
-    list.forEach(([x, z, r], i) => { m4.compose(new THREE.Vector3(x, 0, z), qq.setFromAxisAngle(up, r + (R() < .5 ? Math.PI : 0)), one); meshes.forEach(im => im.setMatrixAt(i, m4)); meshes[0].setColorAt(i, col.set(pick(carCols))); });
+    list.forEach((pc, i) => { const [x, z, r] = pc; pc.rot = r + (R() < .5 ? Math.PI : 0); pc.col = pick(carCols); m4.compose(new THREE.Vector3(x, 0, z), qq.setFromAxisAngle(up, pc.rot), one); meshes.forEach(im => im.setMatrixAt(i, m4)); meshes[0].setColorAt(i, col.set(pc.col)); });
   }
   // ---- moving traffic: lanes with signals, car-following, and yielding to the Lada
   const headOnM = new THREE.MeshStandardMaterial({color: '#fff', emissive: '#fff4d8', emissiveIntensity: NIGHT ? 7 : .6});
@@ -1139,7 +1139,7 @@ function buildWorld() {
       const n = r0[4] > 20 ? 6 : 3, grp = {r: r0, dir, lane, v: r0[4] > 20 ? (lane < 5 ? rr(16, 21) : rr(12, 16)) : rr(11, 15), cars: []}; // left lanes of the avenue are the fast ones
       for (let j = 0; j < n; j++) {
         const kind = r0[4] > 20 && lane > 5 && R() < .2 ? 'bus' : pick(['sedan', 'sedan', 'hatch', 'hatch', 'suv', 'van']);
-        const g = carMesh(kind, pick(carCols)); scene.add(g);
+        const colr = pick(carCols), g = carMesh(kind, colr); g.userData.kind = kind; g.userData.colr = colr; scene.add(g);
         grp.cars.push({g, len: CARGEO(kind).L, along: r0[2] + (j + rr(.05, .55)) / n * (r0[3] - r0[2]), spd: grp.v, vf: kind === 'bus' ? .78 : rr(.88, 1.1), px: 0, pz: 0, ux: 0, uz: 0});
       }
       LANES.push(grp);
@@ -1747,6 +1747,7 @@ function buildWorld() {
   const blinkM = new THREE.MeshBasicMaterial({color: '#ff2a1a'});
   for (const v of blinkers) { const s = new THREE.Mesh(new THREE.SphereGeometry(1.2, 8, 6), blinkM); s.position.copy(v); scene.add(s); }
   scene.userData.blinkM = blinkM;
+  window.__exp = {FT, trees, pal, INTER, LAMPS, ROOFS, WALLS};
 }
 
 const PM = new THREE.MeshStandardMaterial({vertexColors: true, roughness: .85});
@@ -2947,19 +2948,37 @@ function loop() {
   if (NIGHT) { const lv = Math.abs(yaw - lastYaw) / Math.max(dt, 1e-3) + Math.abs(pitch - lastPitch) / Math.max(dt, 1e-3); after.uniforms.damp.value = Math.min(0.86 * FXK, speed / 14 * 0.86 * FXK) * Math.max(0, 1 - lv * 2); } lastYaw = yaw; lastPitch = pitch;
   { const ns = car.userData.navScreen; if (ns && ns.material.map !== navTex) { ns.material.map = navTex; ns.material.needsUpdate = true; } }
   // rear-view mirror
-  if (recRender) { const k3 = frame % 3, vis = []; car.traverse(o => { if (o.isMesh && o.visible) { vis.push(o); o.visible = false; } }); renderer.setRenderTarget(k3 === 0 ? mirrorRT : k3 === 1 ? sideRT : sideRT2); renderer.render(scene, k3 === 0 ? rearCam : k3 === 1 ? sideCam : sideCam2); renderer.setRenderTarget(null); vis.forEach(o => o.visible = true); } // whole Lada hidden: the mirror looks out through the rear glass
+  if (recRender && !window.__noComposer) { const k3 = frame % 3, vis = []; car.traverse(o => { if (o.isMesh && o.visible) { vis.push(o); o.visible = false; } }); renderer.setRenderTarget(k3 === 0 ? mirrorRT : k3 === 1 ? sideRT : sideRT2); renderer.render(scene, k3 === 0 ? rearCam : k3 === 1 ? sideCam : sideCam2); renderer.setRenderTarget(null); vis.forEach(o => o.visible = true); } // whole Lada hidden: the mirror looks out through the rear glass
   // UI
   if (t - lastMap > (navState === 'guide' ? 1 / 30 : 0.25)) { drawMap(); updateGuide(); $('nv-clock').textContent = (TAPE.playing ? '♪ ' + SONGS[TAPE.side].short + ' · ' : '') + clockStr() + ' · LTE'; paintNav(t); lastMap = t; }
-  grade.uniforms.t.value = t; if (recRender) composer.render();
+  grade.uniforms.t.value = t; if (recRender && !window.__noComposer) composer.render();
   if (!REC) requestAnimationFrame(loop);
 }
 
+/* ============================================================ instanced meshes -> map tiles (so the camera frustum skips whatever is behind / beside the car) */
+function chunkInstances(tile = 100) {
+  const skip = new Set(); const dk = scene.userData.ducks; if (dk && dk.I) skip.add(dk.I);
+  const list = []; scene.traverse(o => { if (o.isInstancedMesh && o.count > 48 && !skip.has(o) && o.parent === scene) list.push(o); });
+  const m = new THREE.Matrix4(), p = new THREE.Vector3(), c = new THREE.Color(); let made = 0;
+  for (const o of list) {
+    const bins = new Map();
+    for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m); p.setFromMatrixPosition(m); const k = Math.floor(p.x / tile) + ',' + Math.floor(p.z / tile); (bins.get(k) || bins.set(k, []).get(k)).push(i); }
+    if (bins.size < 2) continue;
+    for (const idx of bins.values()) {
+      const n2 = new THREE.InstancedMesh(o.geometry, o.material, idx.length);
+      idx.forEach((i, j) => { o.getMatrixAt(i, m); n2.setMatrixAt(j, m); if (o.instanceColor) { o.getColorAt(i, c); n2.setColorAt(j, c); } });
+      n2.castShadow = o.castShadow; n2.receiveShadow = o.receiveShadow; n2.renderOrder = o.renderOrder; n2.frustumCulled = true; n2.computeBoundingSphere(); scene.add(n2); made++;
+    }
+    scene.remove(o);
+  }
+  return [list.length, made];
+}
 /* ============================================================ boot */
 (async () => {
   const frame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))), T = {}; let tp = performance.now();
   const step = async (msg, fn) => { if (window.__bootStep) window.__bootStep(msg); await frame(); fn(); const n = performance.now(); T[msg] = Math.round(n - tp); tp = n; };
   if (window.__bootStep) window.__bootStep('글꼴'); try { await Promise.race([document.fonts.load('900 64px Pretendard'), new Promise(r => setTimeout(r, 2500))]); } catch (e) {}
-  await step('하늘', buildSky); await step('도시 짓는 중', buildWorld); await step('차 실내 만드는 중', buildCabin); tapeUI();
+  await step('하늘', buildSky); await step('도시 짓는 중', buildWorld); window.__chunks = chunkInstances(); await step('차 실내 만드는 중', buildCabin); tapeUI();
   if (NIGHT) for (let i = 0; i < 6; i++) { const pl = new THREE.PointLight('#ffad5a', 70, 28, 2); scene.add(pl); plights.push(pl); }
   // footprints for map
   scene.traverse(o => {});
@@ -2971,7 +2990,8 @@ function loop() {
   loop(); window.__dbg.ready = true;
 })().catch(e => { console.error('boot', e.message, e.stack); if (window.__bootFail) window.__bootFail(e.message); else document.getElementById('load').textContent = '오류: ' + e.message; });
 canvas.addEventListener('webglcontextlost', () => { window.__booted = false; if (window.__bootFail) window.__bootFail('그래픽 메모리가 부족해 3D가 꺼졌습니다'); });
-window.__rec = {tick: (n = 1, render = true) => { for (let i = 0; i < n; i++) { recRender = render || i === n - 1; loop(); } recRender = true; }, shot: (q = .9) => canvas.toDataURL('image/jpeg', q), get prog() { return prog; }, get nav() { return navState; }, get arrived() { return navState === 'arrive'; }, get L() { return R0 ? R0.L : 0; }, get t() { return recT; }};
+window.__rec = {view: (y, q = .9) => { const ry = camera.rotation.y; camera.rotation.y = y; camera.updateMatrixWorld(); after.uniforms.damp.value = 0; composer.render(); camera.rotation.y = ry; return canvas.toDataURL('image/jpeg', q); },
+  home: () => { $('g-x').click(); }, get yaw0() { return DEF_YAW; }, tick: (n = 1, render = true) => { for (let i = 0; i < n; i++) { recRender = render || i === n - 1; loop(); } recRender = true; }, shot: (q = .9) => canvas.toDataURL('image/jpeg', q), get prog() { return prog; }, get nav() { return navState; }, get arrived() { return navState === 'arrive'; }, get L() { return R0 ? R0.L : 0; }, get t() { return recT; }};
 window.__dbg = {get speed() { return speed; }, LANES, THREE, TAPE, car, occFree, route, DEST, ROAD, START, navScreenPos: (id) => { const e = typeof id === 'string' ? navEl.querySelector(id) : id; if (!e || !e.offsetParent) return null; let x = 0, y = 0, q = e; while (q && q !== navEl) { x += q.offsetLeft; y += q.offsetTop; q = q.offsetParent; } for (let p = e.parentElement; p && p !== navEl; p = p.parentElement) { x -= p.scrollLeft; y -= p.scrollTop; } const u = (x + e.offsetWidth / 2) / 1000, v = 1 - (y + e.offsetHeight / 2) / 620; const ns = car.userData.navScreen; ns.updateWorldMatrix(true, false); const w = new THREE.Vector3((u - .5) * .33, (v - .5) * .2046, 0).applyMatrix4(ns.matrixWorld).project(camera); const r = canvas.getBoundingClientRect(); return [r.left + (w.x + 1) / 2 * r.width, r.top + (1 - w.y) / 2 * r.height]; }, navProbe: (cx, cy) => { const r = canvas.getBoundingClientRect(); ray3.setFromCamera(new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera); const hn = ray3.intersectObject(car.userData.navScreen, false); if (!hn.length) return 'miss'; const px = hn[0].uv.x * 1000, py = (1 - hn[0].uv.y) * 620, el = navHit(px, py); return [Math.round(px), Math.round(py), el ? (el.id || el.className) : null]; }, scene, renderer, bloom, composer, camera, state, get nav() { return navState; }, preview, start: () => document.getElementById('pv-go').click(), set prog(v) { prog = v; }, get prog() { return prog; }, get R() { return R0; }, look: (y, p) => { tyaw = y; tpitch = p; }, set fov(v) { tfov = v; }, lookNow: (y, p) => { tyaw = yaw = y; tpitch = pitch = p; } };
 
 </script>
