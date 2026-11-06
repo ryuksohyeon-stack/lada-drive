@@ -99,7 +99,14 @@ html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font-family:Pr
 <body>
 <canvas id="gl"></canvas><div id="navhost" aria-hidden="true"></div>
 <div id="load">라다 시동 거는 중…</div>
-<noscript><style>#load{display:none}</style><div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;background:#05070a;color:#cfd6dd;font:600 14px sans-serif">이 화면은 스크립트가 필요한데, 지금 위치(위젯 칸)에서 스크립트가 막혀 있습니다.</div></noscript>
+<noscript><style>#load{display:none}
+.ns{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#05070a;color:#cfd6dd;font:600 15px Pretendard,sans-serif;line-height:1.5}
+.ns b{font-size:20px;color:#fff}.ns small{color:#8b99a7;font-size:12.5px;max-width:420px}
+.ns a{display:block;min-width:240px;padding:13px 20px;border-radius:14px;background:#2f8cff;color:#fff;text-decoration:none;font-weight:800}
+.ns a.m{background:#E9F158;color:#161616}.ns a.x{background:transparent;border:1px solid #3a4652;color:#cfd6dd}</style>
+<div class="ns"><b>라다 4×4 운전석</b><span>이 칸은 3D를 그리는 스크립트가 막혀 있어서, 운전은 새 창에서 열립니다.</span>
+<a href="?city=moscow" target="_blank" rel="noopener">모스크바 운전하기 ↗</a><a class="m" href="?city=norilsk" target="_blank" rel="noopener">노릴스크 운전하기 ↗</a><a class="x" href="map.html">← 지도로 돌아가기</a>
+<small>버튼을 눌러도 새 창이 열리지 않으면, 이 칸이 새 창도 막고 있는 것입니다.</small></div></noscript>
 <nav id="city"></nav>
 <div id="navsrc" style="display:none">
  <div id="nav">
@@ -210,9 +217,9 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), NIGHT ? 0.55 * FX
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const grade = new ShaderPass({
-  uniforms: {tDiffuse: {value: null}, t: {value: 0}, night: {value: NIGHT ? 1 : 0}},
+  uniforms: {tDiffuse: {value: null}, t: {value: 0}, night: {value: NIGHT ? 1 : 0}, gAmt: {value: Q.has('rec') ? .35 : 1}},
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float t, night; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float t, night, gAmt; varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
     void main(){ vec2 d = vUv-.5; float r = dot(d,d);
       vec3 c; c.r = texture2D(tDiffuse, vUv + d*r*.006).r; c.g = texture2D(tDiffuse, vUv).g; c.b = texture2D(tDiffuse, vUv - d*r*.006).b;
@@ -221,7 +228,7 @@ const grade = new ShaderPass({
       c = c*mix(vec3(1.), hi, smoothstep(.4,1.,l)) + sh*(1.-l)*.6;
       c = mix(vec3(l), c, night > .5 ? 1.08 : 1.06);
       c *= 1. - r*(night > .5 ? 1.15 : .7);
-      c += (h(vUv*vec2(1920.,1080.) + fract(t)*91.) - .5) * (night > .5 ? .035 : .018);
+      c += (h(vUv*vec2(1920.,1080.) + fract(t)*91.) - .5) * (night > .5 ? .035 : .018) * gAmt;
       gl_FragColor = vec4(c, 1.); }`
 });
 composer.addPass(grade);
@@ -2855,8 +2862,9 @@ addEventListener('resize', resize);
 const tmpM = new THREE.Matrix4(), cssCam = new THREE.PerspectiveCamera(), _dm = new THREE.Matrix4(), _dq = new THREE.Quaternion(), _dv = new THREE.Vector3(), _UP = new THREE.Vector3(0, 1, 0), _ONE = new THREE.Vector3(1, 1, 1); const tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), clock = new THREE.Clock();
 let blockedT = 0; let frame = 0, lastMap = 0, lastYaw = 0, lastPitch = 0;
 const plights = [];
+const REC = Q.has('rec'); let recT = 0, recRender = true;
 function loop() {
-  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime; frame++;
+  let dt, t; if (REC) { dt = 1 / 24; recT += dt; t = recT; clock.getDelta(); } else { dt = Math.min(clock.getDelta(), 0.05); t = clock.elapsedTime; } frame++;
   // drive
   let steer = 0;
   if (R0 && navState === 'guide') {
@@ -2873,7 +2881,7 @@ function loop() {
     state.x = R0.P[k].x + (R0.P[k + 1].x - R0.P[k].x) * f; state.z = R0.P[k].z + (R0.P[k + 1].z - R0.P[k].z) * f;
     state.h = R0.hd[k] + (R0.hd[k + 1] - R0.hd[k]) * f;
     const k2 = Math.min(R0.hd.length - 1, k + 4); steer = (R0.hd[k2] - R0.hd[k]) / Math.max(1, R0.s[k2] - R0.s[k]);
-    if (prog >= R0.L - 0.3) { navState = 'arrive'; setView('arrive'); speed = 0; arrived = true; setTimeout(() => { if (navState === 'arrive') toBrowse(); }, 3200); }
+    if (prog >= R0.L - 0.3) { navState = 'arrive'; setView('arrive'); speed = 0; arrived = true; if (!REC) setTimeout(() => { if (navState === 'arrive') toBrowse(); }, 3200); }
   } else speed *= 0.9;
   car.position.set(state.x, 0, state.z); car.rotation.y = -state.h * D2R;
   if (wheelG) { const ws = Math.max(-2.2, Math.min(2.2, -9 * Math.atan(2.2 * steer * D2R))); wheelG.userData.inner.rotation.z += (ws - wheelG.userData.inner.rotation.z) * Math.min(1, dt * 3.5); } // ~110° of wheel for a tight 90° city corner
@@ -2939,11 +2947,11 @@ function loop() {
   if (NIGHT) { const lv = Math.abs(yaw - lastYaw) / Math.max(dt, 1e-3) + Math.abs(pitch - lastPitch) / Math.max(dt, 1e-3); after.uniforms.damp.value = Math.min(0.86 * FXK, speed / 14 * 0.86 * FXK) * Math.max(0, 1 - lv * 2); } lastYaw = yaw; lastPitch = pitch;
   { const ns = car.userData.navScreen; if (ns && ns.material.map !== navTex) { ns.material.map = navTex; ns.material.needsUpdate = true; } }
   // rear-view mirror
-  { const k3 = frame % 3, vis = []; car.traverse(o => { if (o.isMesh && o.visible) { vis.push(o); o.visible = false; } }); renderer.setRenderTarget(k3 === 0 ? mirrorRT : k3 === 1 ? sideRT : sideRT2); renderer.render(scene, k3 === 0 ? rearCam : k3 === 1 ? sideCam : sideCam2); renderer.setRenderTarget(null); vis.forEach(o => o.visible = true); } // whole Lada hidden: the mirror looks out through the rear glass
+  if (recRender) { const k3 = frame % 3, vis = []; car.traverse(o => { if (o.isMesh && o.visible) { vis.push(o); o.visible = false; } }); renderer.setRenderTarget(k3 === 0 ? mirrorRT : k3 === 1 ? sideRT : sideRT2); renderer.render(scene, k3 === 0 ? rearCam : k3 === 1 ? sideCam : sideCam2); renderer.setRenderTarget(null); vis.forEach(o => o.visible = true); } // whole Lada hidden: the mirror looks out through the rear glass
   // UI
   if (t - lastMap > (navState === 'guide' ? 1 / 30 : 0.25)) { drawMap(); updateGuide(); $('nv-clock').textContent = (TAPE.playing ? '♪ ' + SONGS[TAPE.side].short + ' · ' : '') + clockStr() + ' · LTE'; paintNav(t); lastMap = t; }
-  grade.uniforms.t.value = t; composer.render();
-  requestAnimationFrame(loop);
+  grade.uniforms.t.value = t; if (recRender) composer.render();
+  if (!REC) requestAnimationFrame(loop);
 }
 
 /* ============================================================ boot */
@@ -2963,6 +2971,7 @@ function loop() {
   loop(); window.__dbg.ready = true;
 })().catch(e => { console.error('boot', e.message, e.stack); if (window.__bootFail) window.__bootFail(e.message); else document.getElementById('load').textContent = '오류: ' + e.message; });
 canvas.addEventListener('webglcontextlost', () => { window.__booted = false; if (window.__bootFail) window.__bootFail('그래픽 메모리가 부족해 3D가 꺼졌습니다'); });
+window.__rec = {tick: (n = 1, render = true) => { for (let i = 0; i < n; i++) { recRender = render || i === n - 1; loop(); } recRender = true; }, shot: (q = .9) => canvas.toDataURL('image/jpeg', q), get prog() { return prog; }, get nav() { return navState; }, get arrived() { return navState === 'arrive'; }, get L() { return R0 ? R0.L : 0; }, get t() { return recT; }};
 window.__dbg = {get speed() { return speed; }, LANES, THREE, TAPE, car, occFree, route, DEST, ROAD, START, navScreenPos: (id) => { const e = typeof id === 'string' ? navEl.querySelector(id) : id; if (!e || !e.offsetParent) return null; let x = 0, y = 0, q = e; while (q && q !== navEl) { x += q.offsetLeft; y += q.offsetTop; q = q.offsetParent; } for (let p = e.parentElement; p && p !== navEl; p = p.parentElement) { x -= p.scrollLeft; y -= p.scrollTop; } const u = (x + e.offsetWidth / 2) / 1000, v = 1 - (y + e.offsetHeight / 2) / 620; const ns = car.userData.navScreen; ns.updateWorldMatrix(true, false); const w = new THREE.Vector3((u - .5) * .33, (v - .5) * .2046, 0).applyMatrix4(ns.matrixWorld).project(camera); const r = canvas.getBoundingClientRect(); return [r.left + (w.x + 1) / 2 * r.width, r.top + (1 - w.y) / 2 * r.height]; }, navProbe: (cx, cy) => { const r = canvas.getBoundingClientRect(); ray3.setFromCamera(new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera); const hn = ray3.intersectObject(car.userData.navScreen, false); if (!hn.length) return 'miss'; const px = hn[0].uv.x * 1000, py = (1 - hn[0].uv.y) * 620, el = navHit(px, py); return [Math.round(px), Math.round(py), el ? (el.id || el.className) : null]; }, scene, renderer, bloom, composer, camera, state, get nav() { return navState; }, preview, start: () => document.getElementById('pv-go').click(), set prog(v) { prog = v; }, get prog() { return prog; }, get R() { return R0; }, look: (y, p) => { tyaw = y; tpitch = p; }, set fov(v) { tfov = v; }, lookNow: (y, p) => { tyaw = yaw = y; tpitch = pitch = p; } };
 
 </script>
