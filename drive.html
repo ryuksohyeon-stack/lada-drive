@@ -75,21 +75,22 @@ html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font-family:Pr
   var pend = null; function say(t) { var l = L(); if (l) { l.classList.remove('off'); l.textContent = t; } else pend = t; }
   document.addEventListener('DOMContentLoaded', function () { if (pend) say(pend); });
   function fail(m) { if (failed || window.__booted) return; failed = true; say('시동 실패 · ' + m); }
-  window.__bootStep = function (s) { if (!failed) say('라다 시동 거는 중… · ' + s); };
+  var STEP = {'글꼴': '열쇠 꽂는 중', '하늘': '앞유리 닦는 중', '도시 짓는 중': '사이드미러 맞추는 중', '차 실내 만드는 중': '히터 트는 중', '그래픽 준비 중': '네비게이션 부팅 중'};
+  window.__bootStep = function (s) { if (!failed) say((STEP[s] || '라다 시동 거는 중') + '…'); };
   window.__bootFail = fail;
   try { var c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) fail('이 브라우저(또는 위젯 칸)에서 3D(WebGL)를 쓸 수 없습니다'); } catch (e) { fail('3D(WebGL) 확인 중 오류: ' + e.message); }
   window.addEventListener('error', function (e) {
     var t = e.target;
-    if (t && t !== window) { if (t.tagName === 'SCRIPT') fail('3D 엔진 파일을 받지 못했습니다 (cdn.jsdelivr.net)'); return; } // a missing stylesheet/font/image is harmless
+    if (t && t !== window) { if (t.tagName === 'SCRIPT') fail('3D 엔진 파일을 받지 못했습니다'); return; } // a missing stylesheet/font/image is harmless
     if (window.__booted) return;
-    if (!window.__modStarted && !e.message) { fail('3D 엔진(three.js)을 받지 못했습니다 — cdn.jsdelivr.net 이 막혔거나 연결이 끊겼습니다'); return; }
+    if (!window.__modStarted && !e.message) { fail('3D 엔진(three.js)을 받지 못했습니다 — 연결이 끊겼을 수 있습니다'); return; }
     fail((e.message || '알 수 없는 오류') + (e.lineno ? ' (줄 ' + e.lineno + ')' : ''));
   }, true);
   window.addEventListener('unhandledrejection', function (e) { if (!window.__booted) fail((e.reason && e.reason.message) || String(e.reason)); });
   var iv = setInterval(function () {
     if (window.__booted || failed) { clearInterval(iv); return; }
     var s = Math.round((Date.now() - t0) / 1000);
-    if (!window.__modStarted && s >= 20) fail('3D 엔진(three.js)을 불러오지 못했습니다 — 네트워크에서 cdn.jsdelivr.net 이 막혔거나 느립니다');
+    if (!window.__modStarted && s >= 20) fail('3D 엔진(three.js)을 불러오지 못했습니다 — 연결이 느립니다');
     else if (s >= 90) fail('너무 오래 걸립니다 (' + s + '초) — 기기 메모리가 부족할 수 있습니다');
   }, 1000);
 })();
